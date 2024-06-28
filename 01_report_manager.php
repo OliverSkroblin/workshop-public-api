@@ -1,10 +1,25 @@
 <?php
 
+/**
+ * 1) Event (are just for adding stuff, not to replace full functions)
+ *
+ *
+ *
+ * 2) Registry / Factory (Cart processor)
+ * 3) Decorator (Product price - add stuff, or replace full functionality)
+ * 4) Adapter (Filesystem, Increment storage, Search - have different infrastructure solutions for the same thing)
+ * 5) Command patter
+ * 6) Observer pattern
+ * 7) Builder pattern
+ * 8) Composite pattern
+ * 9) Facade pattern
+ * 10) Proxy pattern
+ */
 class ReportGenerator
 {
     private $products;
 
-    public function __construct()
+    public function __construct(private readonly Reporter $reporter)
     {
         $this->products = [
             ['id' => 1, 'name' => 'Product 1', 'price' => 10, 'category' => 'A', 'stock' => 100, 'sales' => 50],
@@ -14,7 +29,7 @@ class ReportGenerator
         ];
     }
 
-    public function generateReport()
+    public function load(): ReportData
     {
         // Get the total number of products
         $totalProducts = count($this->products);
@@ -56,21 +71,89 @@ class ReportGenerator
             }
         }
 
+        $data = new ReportData(
+            $totalProducts,
+            $totalSales,
+            $totalRevenue,
+            $averagePrice,
+            $productsByCategory,
+            $outOfStockProducts
+        );
+
+//        (new \Symfony\Component\EventDispatcher\EventDispatcher())
+//            ->dispatch($data, 'report.load');
+
+        return $data;
+    }
+
+    public function report(ReportData $data)
+    {
+        $this->reporter->report($data);
+    }
+}
+
+class XmlReporter extends Reporter
+{
+    public function type(): string
+    {
+        return 'xml';
+    }
+
+    public function report(ReportData $data): void
+    {
+        $xml = new \SimpleXMLElement('<report/>');
+        $xml->addChild('totalProducts', $data->totalProducts);
+        $xml->addChild('totalSales', $data->totalSales);
+        $xml->addChild('totalRevenue', $data->totalRevenue);
+        $xml->addChild('averagePrice', $data->averagePrice);
+        $productsByCategory = $xml->addChild('productsByCategory');
+        foreach ($data->productsByCategory as $category => $products) {
+            $categoryElement = $productsByCategory->addChild('category');
+            $categoryElement->addAttribute('name', $category);
+            foreach ($products as $product) {
+                $productElement = $categoryElement->addChild('product');
+                $productElement->addChild('name', $product['name']);
+                $productElement->addChild('price', $product['price']);
+                $productElement->addChild('sales', $product['sales']);
+            }
+        }
+        $outOfStockProducts = $xml->addChild('outOfStockProducts');
+        foreach ($data->outOfStockProducts as $product) {
+            $outOfStockProducts->addChild('product', $product['name']);
+        }
+
+        echo $xml->asXML();
+
+    }
+}
+
+class JsonReporter extends Reporter
+{
+        public function report(ReportData $data): void
+        {
+            echo json_encode($data);
+        }
+}
+
+class Reporter
+{
+    public function report(ReportData $data): void
+    {
         // Format report
         $report = "Report:\n";
-        $report .= "Total Products: " . $totalProducts . "\n";
-        $report .= "Total Sales: " . $totalSales . "\n";
-        $report .= "Total Revenue: $" . $totalRevenue . "\n";
-        $report .= "Average Price: $" . number_format($averagePrice, 2) . "\n";
+        $report .= "Total Products: " . $data->totalProducts . "\n";
+        $report .= "Total Sales: " . $data->totalSales . "\n";
+        $report .= "Total Revenue: $" . $data->totalRevenue . "\n";
+        $report .= "Average Price: $" . number_format($data->averagePrice, 2) . "\n";
         $report .= "Products by Category:\n";
-        foreach ($productsByCategory as $category => $products) {
+        foreach ($data->productsByCategory as $category => $products) {
             $report .= "  Category " . $category . ":\n";
             foreach ($products as $product) {
                 $report .= "    " . $product['name'] . " - $" . $product['price'] . " (Sales: " . $product['sales'] . ")\n";
             }
         }
         $report .= "Out of Stock Products:\n";
-        foreach ($outOfStockProducts as $product) {
+        foreach ($data->outOfStockProducts as $product) {
             $report .= "  " . $product['name'] . "\n";
         }
 
@@ -78,8 +161,39 @@ class ReportGenerator
     }
 }
 
-$reportGenerator = new ReportGenerator();
+class ReporterFactory
+{
+    public function create(string $format): Reporter
+    {
+        switch ($format) {
+            case 'xml':
+                return new XmlReporter();
+            case 'json':
+                return new JsonReporter();
+            default:
+                return new Reporter();
+        }
+    }
+}
 
-$reportGenerator->generateReport();
+class ReportData
+{
+    public function __construct(
+        public int $totalProducts,
+        public int $totalSales,
+        public float $totalRevenue,
+        public float $averagePrice,
+        public array $productsByCategory,
+        public array $outOfStockProducts
+    ) {}
+}
+
+$reporter = (new ReporterFactory())->create('idontknow');
+
+$reportGenerator = new ReportGenerator($reporter);
+
+$data = $reportGenerator->load();
+
+$reportGenerator->report($data);
 
 
